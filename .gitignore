@@ -1,0 +1,29 @@
+# Secrets & Credentials (NEVER commit!)
+.hf_token
+.env
+*.pem
+*.key
+
+# Python & Virtual Environments
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Runtime Logs & Raw Colab Downloads
+*.log
+results_exp-*/
+hunt_*.log
+_info_*.py
+checkpoints/
+rollout_dumps/
+*.pt
+*.safetensors
+*.tar.zst
+
+# OS / IDE Artifacts
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

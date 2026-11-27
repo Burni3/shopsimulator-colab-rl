@@ -1,0 +1,72 @@
+{
+  "experiment": "gspo_native",
+  "gpu": "NVIDIA A100-SXM4-40GB",
+  "vram_mib": 40960,
+  "vram_profile": "40g-bf16grad-chunked256",
+  "train_sec": 2915.76,
+  "eval_sec": 540.61,
+  "metrics": {
+    "command": "/content/pi-slime-work/micromamba/envs/slime/bin/python -u train.py --actor-num-nodes 1 --actor-num-gpus-per-node 1 --spec slime_plugins.models.qwen3_5 get_qwen3_5_spec --disable-bias-linear --qk-layernorm --group-query-attention --num-attention-heads 8 --num-query-groups 2 --kv-channels 256 --num-layers 24 --hidden-size 2048 --ffn-hidden-size 6144 --use-gated-attention --normalization RMSNorm --apply-layernorm-1p --position-embedding-type rope --norm-epsilon 1e-6 --rotary-percent 0.25 --swiglu --vocab-size 248320 --rotary-base 10000000 --attention-output-gate --hf-checkpoint /content/pi-slime-work/runs/full_rl500_v1_gspo_native/hf/rollout_99 --ref-load /content/pi-slime-work/runs/full_rl500_v1_gspo_native/checkpoints --load /content/pi-slime-work/runs/full_rl500_v1_gspo_native/checkpoints --num-rollout 0 --eval-interval 1 --lr-decay-iters 1 --eval-config /content/exp_cfg/eval_200.yaml --save-debug-rollout-data /content/pi-slime-work/runs/full_rl500_v1_gspo_native/eval_200/rollout_dumps/rollout_\\{rollout_id\\}.pt --prompt-data /content/pi-slime-work/pi-slime-shopsimulator/slime/examples/ShopSimulator/data/tasks_v2/official_test_200.jsonl --input-key prompt --label-key label --metadata-key metadata --rollout-batch-size 1 --n-samples-per-prompt 1 --global-batch-size 1 --micro-batch-size 1 --rollout-max-context-len 16384 --rollout-max-response-len 2048 --rollout-seed 42 --custom-generate-function-path examples.ShopSimulator.generate.generate --tensor-model-parallel-size 1 --pipeline-model-parallel-size 1 --context-parallel-size 1 --expert-model-parallel-size 1 --expert-tensor-parallel-size 1 --rollout-num-gpus 1 --rollout-num-gpus-per-engine 1 --sglang-server-concurrency 20 --sglang-mem-fraction-static 0.60 --sglang-tool-call-parser qwen3_coder --sglang-reasoning-parser qwen3 --sglang-enable-deterministic-inference --seed 1234 --attention-dropout 0.0 --hidden-dropout 0.0 --attention-softmax-in-fp32 --attention-backend flash --loss-mask-type qwen3_5 --colocate",
+    "dumps": [
+      {
+        "candidates": 200,
+        "error_kind_counts": {
+          "environment_terminal": 191,
+          "turn_limit": 9
+        },
+        "fragments": 2484,
+        "metrics": {
+          "done_rate": 0.955,
+          "pass_at_k": {
+            "all_zero_reward_task_fraction": 0.06,
+            "pass_done": 0.955,
+            "pass_positive_reward": 0.94,
+            "pass_right_product": 0.495,
+            "pass_success": 0.34,
+            "reward_variance_task_fraction": 0.0,
+            "samples_per_task": 1,
+            "tasks": 200
+          },
+          "r_att": 0.740351,
+          "r_hard": 0.384542,
+          "r_loose": 0.694056,
+          "r_option": 0.41,
+          "r_price": 0.87,
+          "r_success": 0.34,
+          "r_type": 0.955,
+          "right_product_rate": 0.495,
+          "samples": 200
+        },
+        "path": "/content/pi-slime-work/runs/full_rl500_v1_gspo_native/eval_200/rollout_dumps/rollout_eval_0.pt",
+        "tasks": 200,
+        "termination_reason_counts": {
+          "environment_done": 191,
+          "turn_limit": 9
+        }
+      }
+    ],
+    "metrics": {
+      "done_rate": 0.955,
+      "pass_at_k": {
+        "all_zero_reward_task_fraction": 0.06,
+        "pass_done": 0.955,
+        "pass_positive_reward": 0.94,
+        "pass_right_product": 0.495,
+        "pass_success": 0.34,
+        "reward_variance_task_fraction": 0.0,
+        "samples_per_task": 1,
+        "tasks": 200
+      },
+      "r_att": 0.740351,
+      "r_hard": 0.384542,
+      "r_loose": 0.694056,
+      "r_option": 0.41,
+      "r_price": 0.87,
+      "r_success": 0.34,
+      "r_type": 0.955,
+      "right_product_rate": 0.495,
+      "samples": 200
+    },
+    "status": "eval-complete"
+  }
+}
