@@ -88,6 +88,18 @@ shopsimulator-colab-rl/
 
 ---
 
+## 环境构建与零踩坑核心经验（完整版见 [工程手册](docs/02_Colab_ZeroClick_Infra_and_40G_Tuning.md)）
+
+搭建 `Slime + Megatron-LM + SGLang + Pi + ShopSimulator` 异构全栈本身就是整个实验最大的工程门槛之一，本项目总结了 5 条可直接复用的核心避坑配方：
+
+1. **三环境物理隔离**：`micromamba/envs/slime`（Python 3.12 + CUDA 12.9 + PyTorch 2.11）、`micromamba/envs/shop_env`（Python 3.11 + OpenJDK 21 + 旧版 Flask/Werkzeug + Pyserini/Lucene）与独立 `Node.js 22`（Pi CLI）完全隔离，杜绝旧版依赖炸毁 Ray / SGLang；
+2. **防编译期 OOM 与跨卡复用**：编译 Apex / FlashAttn 时限并发为 `--threads 2 --parallel 3` + `MAX_JOBS=2`（内存峰值压至 10–12 GB），并指定 `TORCH_CUDA_ARCH_LIST="8.0;8.9;9.0"`，一次编译通吃 **A100 / L4 / H100 / Blackwell 96GB**；
+3. **运行时三大必踩雷自愈**：固定 `pyarrow==19.0.1 --no-deps`（解决 NumPy 1.26.4 与 Ray 冲突）、自动创建 `$SLIME_ENV/lib64 -> lib` 与 `lib/stubs` 软链（修复 FlashInfer JIT 找不到 `-lcudart`）、启动前自动抽检 `documents.jsonl` 均长并在检测到英文大写字段误建索引时自动重建 23,421 条中文全字段 Lucene 索引（直接将 SFT 基线从 `0.1659` 救回 `0.5091`）；
+4. **分层打包 + 私有 HF Dataset 33 秒零点击恢复**：将主环境（10.8 GB）与模拟环境（653 MB）用 `zstd -T0 -3` 分层打包，借助私有 HF Dataset 实测 **345–381 MB/s** 拉取，彻底告别 Google Drive 弹窗授权与 50 分钟重复编译，裸机到开训仅 **4–6 分钟**；
+5. **Colab 无人值守防断连**：`start_new_session=True` 脱离内核后台运行 + 每 120s 真实 WebSocket `colab exec` 保活 + Windows 11 Modern Standby 防休眠锁 + `--save-interval 20` 自动断点续跑。
+
+---
+
 ## 快速复现指南
 
 ### 1. 准备前置依赖

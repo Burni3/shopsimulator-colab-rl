@@ -4,21 +4,49 @@
 
 ---
 
-## 一、从 50 分钟编译到 33 秒零点击恢复的工程演进
+## 一、从零构建全栈环境完整指南（避坑与 33 秒零点击恢复）
 
-### 1. 一次预编译 + 多架构缓存
-- 原生 `Slime` 依赖 CUDA 12.9 + PyTorch 2.11 + FlashAttn + FLA + TransformerEngine + Apex + `torch_memory_saver` + 补丁版 Megatron-LM & SGLang，从源码编译耗时约 **50 分钟**（且原版 `Apex` 32 并发 nvcc 在 52 GB RAM 机器上会直接 OOM，已通过修改为 `--threads 2 --parallel 3` + `MAX_JOBS=2` 压至 10–12 GB 内存峰值）。
-- 编译目标设为 `TORCH_CUDA_ARCH_LIST="8.0;8.9;9.0"`，实测兼容 **A100 (`sm_80`)、L4 (`sm_89`)、H100 (`sm_90`)** 以及 **Blackwell RTX PRO 6000 96GB (`sm_120`)**。
-- 将 `ShopSimulator` 隔离在独立的 `micromamba/envs/shop_env`（Python 3.11 + OpenJDK 21）中，彻底避免其旧版 `flask==2.1.2` / `Werkzeug==2.1.2` / `requests==2.27.1` 污染 Slime/Ray 主环境。
+在单卡 Colab / Linux 云主机上从零拉起 **`Slime + Megatron-LM + SGLang + FlashAttn + FLA + TransformerEngine + Apex + Pi + ShopSimulator`** 是一套非常重的异构技术栈（Python 3.12 + Python 3.11 + OpenJDK 21 + Node.js 22 + CUDA 12.9），直接按默认命令安装极易触发编译内存爆炸、依赖冲突与索引静默失效。以下是我们踩完所有坑沉淀出的**可复现工程标准方案**：
 
-### 2. 彻底告别 Google Drive 弹窗：私有 HF Dataset 零点击恢复
-- **痛点**：Colab `drive.mount()` 绑定单机临时 `dfs_ephemeral` token（2–5 分钟过期），每开一台新 VM 必须人工点击浏览器授权，且多机并行极易过期空烧算力。
-- **解法**：利用便宜的 Colab CPU 实例（仅消耗 `0.01 CU`）一次性将 `slime_env_bundle.tar.zst`（10.8 GB）与修复后的 `shopsimulator_ready.tar.zst`（653 MB）同步至私有 HF Dataset 仓库 `your-hf-username/pi-slime-shopsimulator-cache`。
-- **实测提速**：
-  - 配合 [restore_from_hf.sh](../scripts/restore_from_hf.sh) 与 [auto_launch_zero_click.ps1](../scripts/colab_cli/auto_launch_zero_click.ps1)，开卡后 **0 弹窗、0 点击** 自动拉取环境：
-    - `slime_env_bundle.tar.zst`（10.8 GB）：**~30–33 秒**（~345 MB/s）；
-    - `shopsimulator_ready.tar.zst`（653 MB）：**~2.1–3.3 秒**；
-  - 从裸机到进入正式 GRPO/GSPO/OPSD 训练总准备时间仅 **4–6 分钟**，相比从头编译提速 **10–17×**。
+### 1. 三套运行时严格物理隔离（彻底杜绝依赖地狱）
+| 运行时 | 独立目录 | 核心版本 | 隔离原因 |
+| :--- | :--- | :--- | :--- |
+| **RL 主环境（Slime）** | `micromamba/envs/slime` | Python 3.12 + CUDA 12.9 + PyTorch 2.11 + Ray + SGLang + Megatron-LM + TE + Apex + `torch_memory_saver` | 高版本 CUDA/Torch 栈，需要最新 `aiohttp / requests / transformers` |
+| **电商模拟环境（ShopSimulator）** | `micromamba/envs/shop_env` | Python 3.11 + OpenJDK 21 + Pyserini + Lucene + `flask==2.1.2` + `Werkzeug==2.1.2` | 旧版 Flask/Werkzeug/requests 与 Slime/Ray/HF Hub 严重冲突，必须独立进程通过 HTTP `:5000` 通信 |
+| **Agent 执行壳（Pi）** | `pi-npm/node_modules/.bin/pi` | Node.js 22 + `@earendil-works/pi-coding-agent@0.84.2` | 独立 Node22 环境，不依赖宿主系统旧版 Node |
+
+### 2. 源码编译防 OOM 与跨代 GPU 一次编译配方
+- **Apex / CUDA 扩展防编译期 OOM（`exit 137`）**：
+  - 原生 `Apex` / `FlashAttn` 编译默认拉起 32 路并发 `nvcc`，在 Colab（52–83 GB RAM）上瞬间打爆内存被内核 OOM Killer 杀掉；
+  - **实战方案**：强制限制编译并发为 **`--threads 2 --parallel 3`** 与 **`MAX_JOBS=2`**，将整个编译过程内存峰值稳定压在 **10–12 GB**，耗时约 50 分钟一次成功。
+- **跨代 GPU 多架构一次预编译**：
+  - 编译前显式设置 **`TORCH_CUDA_ARCH_LIST="8.0;8.9;9.0"`**，只需在便宜的 L4/A100 上编译一次，实测即可直接兼容 **A100 (`sm_80`)、L4 (`sm_89`)、H100 (`sm_90`)** 以及 **Blackwell RTX PRO 6000 96GB (`sm_120`)**，再也无需换卡重编！
+
+### 3. 三大必踩运行时雷区与自动化自愈脚本（已固化进 `restore_from_hf.sh` 与 `run_experiment.sh`）
+1. **Ray 启动即崩：`pyarrow requires NumPy 2.0`**
+   - **根因**：Megatron / TransformerEngine / ONNX 生态锁定 `numpy==1.26.4`，而新版 `pyarrow>=20` 强依赖 NumPy 2.0；
+   - **1 行根治**：`pip install -q --no-deps --force-reinstall "pyarrow==19.0.1"`。
+2. **SGLang FlashInfer JIT 链接失败：`cannot find -lcudart` / `libcuda.so`**
+   - **根因**：FlashInfer JIT 写死 `-L$CUDA_HOME/lib64`，但 micromamba 安装的 CUDA 库位于 `$SLIME_ENV/lib/`，驱动 stubs 位于 `targets/x86_64-linux/lib/stubs`；
+   - **2 行根治**：启动前幂等创建软链 `ln -s "${SLIME_ENV}/lib" "${SLIME_ENV}/lib64"` 及 `ln -s ".../stubs" "${SLIME_ENV}/lib/stubs"`。
+3. **ShopSimulator 中文 Lucene 索引字段大小写错配导致分数腰斩 3×**
+   - **根因**：上游英文 WebShop 脚本按大写键名（`Title / Description / Attributes`）建索引，但中文商品库 `items_eval_train.json` 实际是小写字段（`title / sub_title / category / shop_name / full_description / attribute / customization_options`），导致索引只剩 `category`（平均文档长度 `<30` 字符），同一 SFT 模型 `r_loose` 暴跌至 `0.1659`、`r_option = 0.0`；
+   - **自动体检自愈**：`run_experiment.sh` 启动前自动抽检 `documents.jsonl` 前 20 条均长，若 `<60` 字符则自动用中文全字段重建 23,421 条 Lucene 索引并同步回缓存包；修复后同一 SFT 模型 `r_loose` 立刻从 **`0.1659 → 0.5091（3.07×）`**、`r_option` 从 **`0 → 24%`**！
+4. **ShopSimulator 20 并发槽位泄漏自检**
+   - 异常中断会导致模拟环境槽位被僵尸会话占用；脚本在每次实验前强制 POST `{"action":"release_all"}` 并断言 `status` 返回 `"free": 20`（不满足则自动重启 `pack_api.py`），确保 20 并发 rollout 零阻塞。
+
+### 4. 彻底告别 Google Drive 弹窗：分层打包 + 私有 HF Dataset 33 秒零点击恢复
+- **为什么放弃 Google Drive**：Colab `drive.mount()` 绑定单机临时 `dfs_ephemeral` token（2–5 分钟即过期），每开一台新 VM 必须人工点浏览器授权，多机并行与夜间重开极易卡死空烧 CU。
+- **分层缓存架构**：
+  - 用极低成本 Colab CPU 实例（仅消耗 `0.01 CU`）使用多线程 `zstd -T0 -3` 将编译好的环境拆分为两层上传至私有 HF Dataset：
+    1. `slime_env_bundle.tar.zst`（10.8 GB：Slime + Megatron + SGLang + Pi + Node22 + `micromamba/envs/slime`）；
+    2. `shopsimulator_ready.tar.zst`（653 MB：已修复全字段中文 Lucene 索引的 `ShopSimulator` + `micromamba/envs/shop_env`）。
+  - 这样当只更新 ShopSimulator 索引或环境脚本时，无需重传 10.8 GB 主包！
+- **实测恢复耗时**：
+  - 配合 [restore_from_hf.sh](../scripts/restore_from_hf.sh) 与 [auto_launch_zero_click.ps1](../scripts/colab_cli/auto_launch_zero_click.ps1)，裸机开卡 **0 弹窗、0 点击**：
+    - 拉取 `slime_env_bundle.tar.zst`（10.8 GB）：**28–33 秒**（实测下载速度 **345–381 MB/s**）；
+    - 拉取 `shopsimulator_ready.tar.zst`（653 MB）：**2.1–3.3 秒**；
+  - 从全新裸机到进入正式 GRPO / GSPO / OPSD 训练总准备时间仅 **4–6 分钟**，相比从头编译提速 **10–17×**！
 
 ---
 
