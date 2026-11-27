@@ -3,6 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Base Model: Qwen3.5-2B](https://img.shields.io/badge/Model-Qwen3.5--2B-blue.svg)](https://huggingface.co/Qwen)
 [![Framework: Slime + Megatron + SGLang](https://img.shields.io/badge/Stack-Slime%20%7C%20Megatron%20%7C%20SGLang-orange.svg)](https://github.com/THUDM/slime)
+[![HF Prebuilt Env](https://img.shields.io/badge/HF%20Prebuilt%20Env-archiiii%2Fpi--slime--colab--env-yellow.svg)](https://huggingface.co/datasets/archiiii/pi-slime-colab-env)
 
 本项目是一套**零侵入上游源码**的多轮工具调用 Agent 强化学习（RL）与工程调优实验套件，基于 [`Piucente/pi-slime-shopsimulator`](https://github.com/Piucente/pi-slime-shopsimulator)（`Qwen3.5-2B` + `Pi` + `Slime` + `ShopSimulator`）构建，完整实现了 **Google Colab 单卡（A100 40GB / H100 80GB / Blackwell RTX PRO 6000 96GB）** 上的算法创新、领域词表无损剪枝与极限显存工程调优。
 
@@ -102,8 +103,18 @@ shopsimulator-colab-rl/
 
 ## 快速复现指南
 
-### 1. 准备前置依赖
-请先按照上游仓库 [`Piucente/pi-slime-shopsimulator`](https://github.com/Piucente/pi-slime-shopsimulator) 的说明准备基础运行环境（或自行打包预编译环境至个人私有 HF Dataset），并参考 `.env.example` 配置环境变量：
+### 1. 30 秒免编译恢复开源环境（推荐！）
+我们已将预编译好的 Slime + Megatron-LM + SGLang + Apex + FlashAttn + Pi 开源运行时（兼容 A100 / L4 / H100 / Blackwell 96GB，**不含任何第三方 ShopSimulator 数据集**）公开至 Hugging Face Dataset：**[`archiiii/pi-slime-colab-env`](https://huggingface.co/datasets/archiiii/pi-slime-colab-env)**，免 Token 即可 30 秒极速恢复：
+
+```bash
+apt-get update -qq && apt-get install -y -qq zstd
+mkdir -p /content/hf_cache_dl /content/pi-slime-work
+python3 -c 'from huggingface_hub import hf_hub_download; hf_hub_download("archiiii/pi-slime-colab-env", "slime_env_bundle.tar.zst", repo_type="dataset", local_dir="/content/hf_cache_dl")'
+tar -C /content/pi-slime-work -I "zstd -T0 -d" -xf /content/hf_cache_dl/slime_env_bundle.tar.zst
+rm -f /content/hf_cache_dl/slime_env_bundle.tar.zst
+```
+
+随后请按上游仓库 [`Piucente/pi-slime-shopsimulator`](https://github.com/Piucente/pi-slime-shopsimulator) 说明自行拉取 ShopSimulator 并参考 `.env.example` 配置可选环境变量（用于结果自动回传个人仓库）：
 
 ```bash
 export HF_TOKEN="hf_your_token_here"
